@@ -1,0 +1,190 @@
+%spark2.pyspark
+from pyspark.sql.functions import *
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.functions import monotonically_increasing_id
+
+%spark2.pyspark
+df1 = spark.read.csv("hdfs:///user/maria_dev/data/plane_2003.csv", inferSchema="true", header="true")
+df2 = spark.read.csv("hdfs:///user/maria_dev/data/plane_2004.csv", inferSchema="true", header="true")
+df3 = spark.read.csv("hdfs:///user/maria_dev/data/plane_2005.csv", inferSchema="true", header="true")
+df4 = spark.read.csv("hdfs:///user/maria_dev/data/plane_2006.csv", inferSchema="true", header="true")
+df5 = spark.read.csv("hdfs:///user/maria_dev/data/plane_2007.csv", inferSchema="true", header="true")
+df6 = spark.read.csv("hdfs:///user/maria_dev/data/plane_2008.csv", inferSchema="true", header="true")
+
+%spark2.pyspark
+df = df1.union(df2).union(df3).union(df4).union(df5).union(df6)
+
+%spark2.pyspark
+df.show()
+
+%spark2.pyspark
+print((df.count(), len(df.columns)))
+
+%spark2.pyspark
+print((df1.count(), len(df.columns)))
+print((df2.count(), len(df.columns)))
+print((df3.count(), len(df.columns)))
+print((df4.count(), len(df.columns)))
+print((df5.count(), len(df.columns)))
+print((df6.count(), len(df.columns)))
+
+%spark2.pyspark
+df = df.filter(df["Cancelled"]==0)
+df = df.filter(df["Diverted"]==0)
+
+df = df.replace(["NA"], ["0"], "CarrierDelay")
+df = df.replace(["NA"], ["0"], "WeatherDelay")
+df = df.replace(["NA"], ["0"], "NASDelay")
+df = df.replace(["NA"], ["0"], "SecurityDelay")
+df = df.replace(["NA"], ["0"], "LateAircraftDelay")
+
+df = df.withColumn("ElapsedTime", df.ArrTime - df.DepTime)
+df = df.withColumn("CRSElapsedTime", df.CRSArrTime - df.CRSDepTime)
+df = df.withColumn("ElapsedTimeDelay", df.CRSElapsedTime - df.ActualElapsedTime)
+
+df = df.drop("FlightNum", "Distance", "AirTime", "TaxiIn", "TaxiOut", "CancellationCode")							
+airport_dep = df.groupby("Origin").agg(F.count("Year").alias("origin_cnt")).sort(F.desc("origin_cnt")).limit(10)
+airport_arr = df.groupby("Dest").agg(F.count("Year").alias("dest_cnt")).sort(F.desc("dest_cnt")).limit(10)
+
+airport_list = [row.Origin for row in airport_dep.collect()]
+df = df.filter(df['Origin'].isin(airport_list) & df['Dest'].isin(airport_list))
+
+%spark2.pyspark
+print((df.count(), len(df.columns)))
+
+
+%spark2.pyspark
+# 전체 데이터 일별지연 시간
+day = df.groupBy('DayofMonth').agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         avg("Depdelay").alias("avg_depdelay"))
+z.show(day)
+
+%spark2.pyspark
+# 2008년 일별지연 시간
+day = df.groupBy('DayofMonth').agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         avg("Depdelay").alias("avg_depdelay"))
+z.show(day)
+
+# 출발지연과 도착지연의 분포가 유사함
+# 9-16일: 지연이 적다 
+# 31일이 제일 높음
+
+%spark2.pyspark
+# 2008년 월별 지연 시간
+month = df.groupBy("Month").agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         avg("Depdelay").alias("avg_depdelay"))
+z.show(month)
+
+# 월이 4개 밖에 없음 왜지?
+# 4월이 지연이 가장 적다
+
+
+%spark2.pyspark
+# 전체 월별 지연 시간
+month = df.groupBy("Month").agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         avg("Depdelay").alias("avg_depdelay"))
+z.show(month)
+#4월, 9월 지연이 작다
+
+
+%spark2.pyspark
+# 2008년 요일별 지연 시간
+dow = df.groupBy("DayOfWeek").agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         avg("Depdelay").alias("avg_depdelay"))
+z.show(dow)
+# 출발 지연과 도착 지연의 분포 유사
+# 수요일이 지연이 가장 적고 월요일, 금요일, 일요일의 지연이 가장 심함
+
+
+%spark2.pyspark
+# 전체 요일별 지연 시간
+dow = df.groupBy("DayOfWeek").agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         avg("Depdelay").alias("avg_depdelay"))
+z.show(dow)
+# 토요일의 출발 지연이 압도적으로적다
+# 목, 금 지연 심함
+
+
+%spark2.pyspark
+# 2008년 출발지 기준 지연 시간
+from pyspark.sql.functions import sum,avg,max
+
+plane_route = df.groupBy("Origin").agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         max("Arrdelay").alias("max_arrdelay"), \
+                         min("Arrdelay").alias("min_arrdelay"), \
+                         avg("Depdelay").alias("avg_depdelay"), \
+                         max("Depdelay").alias("max_depdelay"), \
+                         min("Depdelay").alias("min_depdelay"))
+z.show(plane_route)
+
+# 모든 최소 지연 시간은 -1: 빨리 도착한 시간이 아니라 빨리 도착하기만 하면 -1일 수도 있겠다
+# 모든 최대 지연 시간은 99: 아무리 오래 걸려도 max가 99인듯하다
+# 가장 심한 출발지연 출발지:ORD(25.45) /  가장 작은 출발 지연 출발지: PHX(7.92)
+# 가장 심한 출발지연 도착지:IAH(11.46) /  가장 작은 도착 지연 도착지: PHX(10.44)
+# 비교적 출발 지연보다 도착 지연 시간이 길고 PHX 공항은 지연이 가장 적게 일어나는 공항이다
+# 유일하게 DTW 공항만 출발 지연 시간의 평균값이 도착 지연 시간의 평균값보다 크다(나머지는 출발지연 < 도착지연)
+
+%spark2.pyspark
+# 전체 출발지 기준 지연 시간
+from pyspark.sql.functions import sum,avg,max
+
+origin = df.groupBy("Origin").agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         max("Arrdelay").alias("max_arrdelay"), \
+                         min("Arrdelay").alias("min_arrdelay"))
+z.show(origin)
+
+%spark2.pyspark
+# 2008년 도착지 기준 지연 시간
+from pyspark.sql.functions import sum,avg,max
+
+plane_route = df.groupBy("Dest").agg(
+                         avg("Arrdelay").alias("avg_arrdelay"), \
+                         max("Arrdelay").alias("max_arrdelay"), \
+                         min("Arrdelay").alias("min_arrdelay"), \
+                         avg("Depdelay").alias("avg_depdelay"), \
+                         max("Depdelay").alias("max_depdelay"), \
+                         min("Depdelay").alias("min_depdelay"))
+z.show(plane_route)
+
+# 가장 심한 출발지연 출발지:ORD(27.20) /  가장 작은 출발 지연 출발지: IAH(9.85)
+# 가장 심한 출발지연 도착지:ORD(25.48) /  가장 작은 도착 지연 도착지: ATL(9.97)
+# 도착지가 ORD인 경우가 지연이 가장 심하다
+
+%spark2.pyspark
+# 전체 도착지 기준 지연 시간
+from pyspark.sql.functions import sum,avg,max
+
+dest = df.groupBy("Dest").agg(
+                         avg("Depdelay").alias("avg_depdelay"), \
+                         max("Depdelay").alias("max_depdelay"), \
+                         min("Depdelay").alias("min_depdelay"))
+z.show(dest)
+
+%spark2.pyspark
+# 항공사 별 지연 시간
+carrier = df.groupby(['UniqueCarrier']).agg(
+    mean('ArrDelay').alias('arrdelay_avg'),\
+    mean('DepDelay').alias('depdelay_avg')
+    )
+
+z.show(carrier)
+# OH 항공사의 출발지연이 매우 심하다
+# 나머지는 고만고만함
+
+%spark2.pyspark
+# 항공사 별 지연 시간
+carrier = df.groupby(['UniqueCarrier']).agg(
+    mean('ArrDelay').alias('arrdelay_avg'),\
+    mean('DepDelay').alias('depdelay_avg')
+    )
+
+z.show(carrier)
